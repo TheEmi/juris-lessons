@@ -1,5 +1,8 @@
 import { open, lede, prose, rich, code, note, pull, table, h2 } from "./ui.js";
 import { mountLive } from "./demos.js";
+import { mountRequestFlow, mountPasses, mountHydrateChart, mountFanout, mountBus } from "./charts.js";
+
+const stage = (onStart, caption) => ({ DemoFrame: { onStart, caption } });
 
 const FILES = [
     ["app", "client/app.js", `export const routes = [
@@ -343,6 +346,7 @@ export function registerKitLessons(juris) {
 
     juris.registerComponent("LessonRequest", () => open("request", "A page request, in an order that does not move.", [
         lede("createPagePipeline handles a request in seven steps. The order is fixed because it is what keeps a page from reaching someone it was not for. A guest’s cached copy is never served past a guard, and a viewer’s page is never stored for the next guest."),
+        stage(mountRequestFlow, "Send a request, or click a step. The packet only moves forward."),
         { Stepper: { name: "request", steps: REQUEST } },
         code("handle.js", `
             // What createJurisServer answers with.
@@ -357,6 +361,7 @@ export function registerKitLessons(juris) {
 
     juris.registerComponent("LessonSsr", () => open("ssr", "The same layout, evaluated once.", [
         lede("On the server a binding runs once and its return value is written into the HTML. Nothing is subscribed. The browser is where the function becomes a subscription. The two passes draw the same elements because they share the layout and the safety rules."),
+        stage(mountPasses, "Six bindings. The server column stays at one pass. Each write only grows the browser column."),
         code("ssr.js", `
             import Juris from "juris/juris.js";
             import SSRRenderer from "juris-kit/server/ssr-renderer.js";
@@ -420,6 +425,7 @@ export function registerKitLessons(juris) {
 
     juris.registerComponent("LessonHydrate", () => open("hydrate", "Taking over the page the server wrote.", [
         lede("hydrate(options) is the whole client boot, in the one order that works. boot.js calls it. The options it shares with the server, title and the juris object of allowTags, allowSchemes, allowInnerHTML and components, come from the same module both sides import. A mismatch is the browser taking away what the server drew."),
+        stage(mountHydrateChart, "Drag across the boot. The page becomes interactive when the client mounts into #app."),
         { Stepper: { name: "hydrate", steps: HYDRATE } },
         code("boot.js", `
             import { hydrate } from "/src/client.js";
@@ -465,6 +471,7 @@ export function registerKitLessons(juris) {
 
     juris.registerComponent("LessonLive", () => open("live", "A query stays current, and only the change travels.", [
         lede("api.live(path, name, ...args) calls a service, writes the answer at path, and keeps it written as the server pushes changes. The subscription ends with the component. Several paths may watch one query. One path belongs to one service: a second service on the same path throws, because a page would otherwise draw the other service’s data after a navigation."),
+        stage(mountFanout, "One database read, shared. The byte sizes are illustrated: 32 bytes a field, eight fields in the value."),
         { DemoFrame: { onStart: mountLive, caption: "A model of the dispatcher. The real one speaks SSE. Commit the same text twice and the second run sends nothing." } },
         prose("The stage is a picture of the protocol, running in the page. Two pages subscribe to greeting(\"world\"). One commit changes the value the query would return. Both pages receive the changed leaf. A commit that changes nothing is re-run and sent to nobody. On the real server the grouping is by name and arguments, so a hundred tabs watching the same query cost one database read and one diff."),
         code("live.js", `
@@ -532,6 +539,7 @@ export function registerKitLessons(juris) {
 
     juris.registerComponent("LessonBus", () => open("bus", "One write, every instance.", [
         lede("Live subscribers and the in-memory registry live in the process that accepted the stream. A second instance does not see them. Without a bus, a mutation updates the pages connected to the instance that ran it, and the other instances keep serving the previous value until something else wakes them. The bus carries the invalidation targets."),
+        stage(mountBus, "Advance a write from the instance that committed it to the pages on the other one. The poll slider is the MariaDB wait."),
         code("bus.js", `
             import { createPgOutboxBus, SCHEMA } from "juris-kit/server/bus/pg-outbox.js";
 
