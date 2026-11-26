@@ -1,6 +1,6 @@
 import { open, lede, prose, rich, code, note, pull, table, h2 } from "./ui.js";
 import { mountLive } from "./demos.js";
-import { mountRequestFlow, mountPasses, mountHydrateChart, mountFanout, mountBus } from "./charts.js";
+import { mountRequestFlow, mountPasses, mountHydrateChart, mountBus } from "./charts.js";
 
 const stage = (onStart, caption) => ({ DemoFrame: { onStart, caption } });
 
@@ -145,100 +145,7 @@ const ATLAS = [
     },
 ];
 
-const REQUEST = [
-    { title: "One spelling of the path", body: "canonicalPath runs before anything reads the URL. Any other spelling is a 301 to the canonical one. A cache key and a render later see a single path." },
-    { title: "Who is asking", body: "The app’s viewer(req, url) returns the person, or null for a guest. A viewer’s page is personal: it is never kept, never served from the guest cache, and it is sent private." },
-    { title: "The route", body: "The router’s resolve names the route, with the viewer as context. A redirect the guard or the route table returns is a 302, sent before the cache is asked, so a copy kept for guests is never served past a guard." },
-    { title: "The before hooks", body: "page.before runs in order. The first hook that returns a location redirects. This is the app’s place for a check the route table does not express." },
-    { title: "The page cache", body: "Guests only, and not for a request the app’s personal hook says is theirs alone. A hit is sent. A stale hit is sent while one render replaces it. createJurisServer itself keeps no cache: a cache has to be fed by the dispatcher’s invalidations, so you build that dispatcher and pass it as api." },
-    { title: "The render", body: "The route’s preload runs, then one renderRequest. A page the cache may keep is rendered from its cache key, which holds only the query parameters pages declared, so the first visitor’s other parameters never ride along in the state." },
-    { title: "The answer", body: "public for a guest, private for a viewer or a personal request, no-store in development. A GET or HEAD that already holds the page’s ETag gets a 304. A 404 never does. Methods other than GET and HEAD never reach a page." },
-];
-
-const HYDRATE = [
-    { title: "Parse #state", body: "The JSON in the script tag is the state the server rendered with, private roots already removed, < escaped so the tag cannot be closed early." },
-    { title: "Build the instance", body: "The browser constructs Juris with that state, stubs for the services a page may call, and the components the server was given. In dev mode, and only then, it imports devtools.js." },
-    { title: "Install plugins", body: "The router, then the live client, then the app’s plugins, in the order given. The server installed them in that order too. An api name is taken once." },
-    { title: "Register components", body: "register(juris) defines the same components the server’s setup defined. A component reaches Juris through its api and imports nothing of it." },
-    { title: "The skew guard", body: "If this build’s route table names the page differently from the server that drew it, the browser reloads once before drawing. A cached page can boot the next build. The guard remembers the reload in sessionStorage, under a key the app names." },
-    { title: "The route’s own code", body: "Every matched record’s load() is awaited. That is how a page’s module arrives before anything unregistered is drawn." },
-    { title: "beforeMount", body: "The app’s hook runs, and may return a promise. This is where a preference the server could not know is written, before the first render reads it." },
-    { title: "Mount", body: "The root layout, { App: {} } unless you said otherwise, is drawn into #app, replacing the server’s markup. Preloaded calls are released, and later calls go to the network." },
-    { title: "The title", body: "document.title is bound with the same title options the server used, so a page named from its data keeps that name." },
-    { title: "Prefetch", body: "Once the browser is idle, every other route’s code is loaded, and the first navigation is instant. prefetch: false waits until the route is visited." },
-    { title: "The service worker", body: "If hydrate was given a serviceWorker script, it is registered when idle, and its messages are handed to the app. Then, if you asked, the instance is exposed on a global name a test can wait for." },
-];
-
 export function registerKitLessons(juris) {
-    juris.registerComponent("Stepper", (props, api) => {
-        const [step, setStep] = api.useState(props.name, 0);
-        const steps = props.steps;
-        const last = steps.length - 1;
-        return {
-            div: {
-                className: "stepper",
-                children: [
-                    {
-                        ol: {
-                            children: steps.map((item, index) => ({
-                                li: {
-                                    children: [{
-                                        button: {
-                                            type: "button",
-                                            className: "step-btn",
-                                            classList: { on: () => step() === index },
-                                            onclick: () => setStep(index),
-                                            children: [
-                                                { span: { className: "step-i", textContent: String(index + 1).padStart(2, "0") } },
-                                                { span: { textContent: item.title } },
-                                            ],
-                                        },
-                                    }],
-                                },
-                            })),
-                        },
-                    },
-                    {
-                        div: {
-                            className: "step-body",
-                            children: () => {
-                                const item = steps[step()];
-                                return [
-                                    { h2: { textContent: item.title } },
-                                    { p: { textContent: item.body } },
-                                ];
-                            },
-                        },
-                    },
-                    {
-                        div: {
-                            className: "row",
-                            children: [
-                                {
-                                    button: {
-                                        type: "button",
-                                        textContent: "Previous",
-                                        disabled: () => step() === 0,
-                                        onclick: () => setStep((n) => Math.max(0, n - 1)),
-                                    },
-                                },
-                                {
-                                    button: {
-                                        type: "button",
-                                        className: "primary",
-                                        textContent: "Next",
-                                        disabled: () => step() === last,
-                                        onclick: () => setStep((n) => Math.min(last, n + 1)),
-                                    },
-                                },
-                            ],
-                        },
-                    },
-                ],
-            },
-        };
-    });
-
     juris.registerComponent("LessonSplit", () => open("split", "The browser package, and the Node package.", [
         lede("juris is the half a browser downloads. juris-kit depends on it, serves it at /src/, and adds the server. Rendering to a string is the kit’s on purpose: the string renderer is not in the import graph of juris.js, so a page never downloads it."),
         table(
@@ -345,9 +252,8 @@ export function registerKitLessons(juris) {
     });
 
     juris.registerComponent("LessonRequest", () => open("request", "A page request, in an order that does not move.", [
-        lede("createPagePipeline handles a request in seven steps. The order is fixed because it is what keeps a page from reaching someone it was not for. A guest’s cached copy is never served past a guard, and a viewer’s page is never stored for the next guest."),
-        stage(mountRequestFlow, "Send a request, or click a step. The packet only moves forward."),
-        { Stepper: { name: "request", steps: REQUEST } },
+        lede("createPagePipeline handles a request in a fixed order. A guest’s cached copy is never served past a guard, and a viewer’s page is never stored for the next guest."),
+        stage(mountRequestFlow, "Five requests, one pipeline. A dim stage did not run."),
         code("handle.js", `
             // What createJurisServer answers with.
             const server = await createJurisServer({ /* the five-file config */ });
@@ -357,11 +263,12 @@ export function registerKitLessons(juris) {
             await server.close();
         `),
         prose("One Juris instance renders every request. renderRequest keeps them apart by replacing the whole state and serialising it with nothing in between that could yield. Hooks run before that call or after it returns. None run inside it. server.render is the render without the cache, which a test uses. server.invalidate reaches live queries and the bus the way a service’s touches do, for a change that happened outside a service call."),
+        prose("A guest hit can be stale: that copy is sent while one render replaces it. The cache key holds only the query parameters the pages declared. createJurisServer keeps no cache of its own. A cache has to be fed by the dispatcher’s invalidations, so you build that dispatcher and pass it as api. A GET or HEAD that already holds the page’s ETag is a 304. The missing page in the trace is the answer that never becomes one."),
     ]));
 
     juris.registerComponent("LessonSsr", () => open("ssr", "The same layout, evaluated once.", [
         lede("On the server a binding runs once and its return value is written into the HTML. Nothing is subscribed. The browser is where the function becomes a subscription. The two passes draw the same elements because they share the layout and the safety rules."),
-        stage(mountPasses, "Six bindings. The server column stays at one pass. Each write only grows the browser column."),
+        stage(mountPasses, "The left column has already been sent. Take over, then add one: only the binding that reads the count runs again."),
         code("ssr.js", `
             import Juris from "juris/juris.js";
             import SSRRenderer from "juris-kit/server/ssr-renderer.js";
@@ -424,9 +331,8 @@ export function registerKitLessons(juris) {
     ]));
 
     juris.registerComponent("LessonHydrate", () => open("hydrate", "Taking over the page the server wrote.", [
-        lede("hydrate(options) is the whole client boot, in the one order that works. boot.js calls it. The options it shares with the server, title and the juris object of allowTags, allowSchemes, allowInnerHTML and components, come from the same module both sides import. A mismatch is the browser taking away what the server drew."),
-        stage(mountHydrateChart, "Drag across the boot. The page becomes interactive when the client mounts into #app."),
-        { Stepper: { name: "hydrate", steps: HYDRATE } },
+        lede("hydrate(options) is the whole client boot. boot.js calls it. The options it shares with the server, title and the juris object of allowTags, allowSchemes, allowInnerHTML and components, come from the same module both sides import. A mismatch is the browser taking away what the server drew."),
+        stage(mountHydrateChart, "Add does nothing while the server markup is up. Take over the document, or open one from the previous build."),
         code("boot.js", `
             import { hydrate } from "/src/client.js";
             import { routes, register, title } from "./app.js";
@@ -471,9 +377,8 @@ export function registerKitLessons(juris) {
 
     juris.registerComponent("LessonLive", () => open("live", "A query stays current, and only the change travels.", [
         lede("api.live(path, name, ...args) calls a service, writes the answer at path, and keeps it written as the server pushes changes. The subscription ends with the component. Several paths may watch one query. One path belongs to one service: a second service on the same path throws, because a page would otherwise draw the other service’s data after a navigation."),
-        stage(mountFanout, "One database read, shared. The byte sizes are illustrated: 32 bytes a field, eight fields in the value."),
-        { DemoFrame: { onStart: mountLive, caption: "A model of the dispatcher. The real one speaks SSE. Commit the same text twice and the second run sends nothing." } },
-        prose("The stage is a picture of the protocol, running in the page. Two pages subscribe to greeting(\"world\"). One commit changes the value the query would return. Both pages receive the changed leaf. A commit that changes nothing is re-run and sent to nobody. On the real server the grouping is by name and arguments, so a hundred tabs watching the same query cost one database read and one diff."),
+        { DemoFrame: { onStart: mountLive, caption: "Two pages already share greeting(\"world\"). Commit a new name, commit it again, then open a third page." } },
+        prose("Page C joins a query that already has a value, so it is answered from that value and the database is not read again. On the real server the grouping is by name and arguments."),
         code("live.js", `
             // In the component. The arguments match the route's preload, exactly.
             api.live("greeting", "greeting", "world");
@@ -539,7 +444,7 @@ export function registerKitLessons(juris) {
 
     juris.registerComponent("LessonBus", () => open("bus", "One write, every instance.", [
         lede("Live subscribers and the in-memory registry live in the process that accepted the stream. A second instance does not see them. Without a bus, a mutation updates the pages connected to the instance that ran it, and the other instances keep serving the previous value until something else wakes them. The bus carries the invalidation targets."),
-        stage(mountBus, "Advance a write from the instance that committed it to the pages on the other one. The poll slider is the MariaDB wait."),
+        stage(mountBus, "Commit on A. Postgres wakes B in the same beat. MariaDB waits until you poll. B does not write a second row."),
         code("bus.js", `
             import { createPgOutboxBus, SCHEMA } from "juris-kit/server/bus/pg-outbox.js";
 
@@ -555,8 +460,8 @@ export function registerKitLessons(juris) {
             await bus.start();
             // prune on a timer: the table is not a history
         `),
-        prose("Postgres has LISTEN/NOTIFY, so an instance is woken when a change commits. NOTIFY alone drops anything published while a process was restarting, and it cannot be replayed. The outbox table is the record. NOTIFY is the doorbell: the listener wakes, reads the table, and a sweep catches what the doorbell missed. MariaDB and MySQL have no doorbell, so mysql-outbox.js polls. The latency is the poll interval. The targets and the dispatcher’s view of them are the same."),
-        prose("The dispatcher calls bus.publish with the targets of a local invalidation, and bus.subscribe feeds remote ones back in without publishing them again. onInvalidate on the live options sees every target this instance applies, local or remote, before the next request is taken. That is the hook a page cache uses: onInvalidate: (targets) => cache.invalidate(targets). A target of { name: \"$pages\" } means every page. It re-runs no live query. It drops the cache."),
+        prose("The outbox row is the record. A notification reaches only the sessions listening at that moment, so a sweep still reads the table and catches a restart. mysql-outbox.js is the same contract without a doorbell: the latency is the poll interval. The dispatcher calls bus.publish for a local invalidation, and bus.subscribe feeds a remote one back in without publishing it again."),
+        prose("onInvalidate on the live options sees every target this instance applies, local or remote, before the next request is taken. That is the hook a page cache uses: onInvalidate: (targets) => cache.invalidate(targets). A target of { name: \"$pages\" } means every page. It re-runs no live query. It drops the cache."),
         note("Identifiers for the table and the channel are lowercase and plain. Postgres folds an unquoted LISTEN name to lowercase and does not fold the string you passed to pg_notify. A capital would notify one channel and listen on another, and every change would wait for the sweep. The bus refuses anything that is not a lowercase identifier."),
     ]));
 

@@ -721,6 +721,8 @@ export function mountLive(el) {
                 last: "Hello, world",
                 a: "Hello, world",
                 b: "Hello, world",
+                c: "",
+                wire: "one run, full value, shared by A and B",
                 log: [
                     "subscribe greeting [\"world\"] on page A",
                     "subscribe greeting [\"world\"] on page B",
@@ -728,6 +730,7 @@ export function mountLive(el) {
                 ],
             },
         });
+        const watching = (api) => (api.getState("c", "") ? 3 : 2);
         const push = (api, line) => api.updateState("log", (lines) => [...lines, line].slice(-7));
         juris.registerComponent("Model", (props, api) => ({
             div: {
@@ -757,15 +760,34 @@ export function mountLive(el) {
                                             api.setValue("db", next);
                                             push(api, "mutation rename  touches greeting");
                                             if (next === prev) {
+                                                api.setValue("wire", "re-run, nothing changed, sent to nobody");
                                                 push(api, "re-run greeting [\"world\"]  unchanged, sent nothing");
                                                 return;
                                             }
+                                            const pages = watching(api);
                                             api.batch(() => {
                                                 api.setValue("last", next);
                                                 api.setValue("a", next);
                                                 api.setValue("b", next);
+                                                if (api.getState("c", "")) api.setValue("c", next);
+                                                api.setValue("wire", `{ text: "${next}" } → ${pages} pages`);
                                             });
-                                            push(api, "diff { text }  →  2 pages");
+                                            push(api, `diff { text }  →  ${pages} pages`);
+                                        },
+                                    },
+                                },
+                                {
+                                    button: {
+                                        type: "button",
+                                        textContent: "Open page C",
+                                        disabled: () => api.getState("c", "") !== "",
+                                        onclick: () => {
+                                            const value = api.getState("last", "");
+                                            api.batch(() => {
+                                                api.setValue("c", value);
+                                                api.setValue("wire", "page C joined the last value, no new read");
+                                            });
+                                            push(api, "page C joined greeting [\"world\"] from the last value");
                                         },
                                     },
                                 },
@@ -776,7 +798,8 @@ export function mountLive(el) {
                         section: {
                             className: "live-col stream",
                             children: [
-                                { h3: { textContent: "Stream" } },
+                                { h3: { textContent: "On the wire" } },
+                                { p: { className: "wire", textContent: () => api.getState("wire", "") } },
                                 {
                                     ol: {
                                         className: "log",
@@ -791,8 +814,14 @@ export function mountLive(el) {
                             className: "live-col pages",
                             children: [
                                 { h3: { textContent: "Pages" } },
-                                { p: { className: "page-card", textContent: () => api.getState("a", "") } },
-                                { p: { className: "page-card", textContent: () => api.getState("b", "") } },
+                                { p: { className: "page-card", textContent: () => `A  ${api.getState("a", "")}` } },
+                                { p: { className: "page-card", textContent: () => `B  ${api.getState("b", "")}` } },
+                                {
+                                    p: {
+                                        className: "page-card",
+                                        textContent: () => (api.getState("c", "") ? `C  ${api.getState("c", "")}` : "C  not open"),
+                                    },
+                                },
                             ],
                         },
                     },

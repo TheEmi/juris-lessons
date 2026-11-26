@@ -1,213 +1,190 @@
 import Juris from "./vendor/juris.js";
 
-const INK = "#102028";
-const SOFT = "#3d5562";
-const RULE = "#0b5f70";
-const LIVE = "#0d7a62";
-const SIGNAL = "#1493a8";
-const TRACK = "#d5e3ea";
-const PAPER = "#f4fafb";
-
 function mount(el, build) {
     const juris = build();
     return () => juris.disposeTree(el);
 }
 
-function readout(text) {
-    return { p: { className: "chart-readout", textContent: text } };
-}
-
-function slider(api, path, label, min, max, step) {
+function choice(api, path, id, label) {
     return {
-        label: {
-            className: "slider",
-            children: [
-                { span: { textContent: () => `${label} ${api.getState(path)}` } },
-                {
-                    input: {
-                        type: "range",
-                        min: String(min),
-                        max: String(max),
-                        step: String(step),
-                        value: () => String(api.getState(path)),
-                        oninput: (event) => api.setValue(path, Number(event.target.value)),
-                    },
-                },
-            ],
+        button: {
+            type: "button",
+            className: "choice",
+            classList: { on: () => api.getState(path) === id },
+            textContent: label,
+            onclick: () => api.setValue(path, id),
         },
     };
 }
 
-// Two or three columns. `value` reads state. The tallest column is the scale.
-function columnChart(api, series, plot) {
-    const bottom = plot.y + plot.h;
-    const slot = plot.w / series.length;
-    const barW = Math.min(84, slot * 0.42);
-    const heightOf = (item) => {
-        const max = plot.scale ?? Math.max(1, ...series.map((seriesItem) => seriesItem.value()));
-        const value = item.value();
-        return value <= 0 ? 0 : Math.max(4, (value / max) * plot.h);
-    };
-    return {
-        svg: {
-            className: "chart-svg",
-            viewBox: `0 0 ${plot.width} ${plot.height}`,
-            role: "img",
-            children: [
-                {
-                    line: {
-                        x1: plot.x,
-                        x2: plot.x + plot.w,
-                        y1: bottom,
-                        y2: bottom,
-                        stroke: SOFT,
-                        "stroke-opacity": "0.35",
-                    },
-                },
-                ...series.map((item, index) => {
-                    const cx = plot.x + slot * index + slot / 2;
-                    return {
-                        g: {
-                            children: [
-                                {
-                                    rect: {
-                                        x: cx - barW / 2,
-                                        width: barW,
-                                        rx: 8,
-                                        fill: item.fill,
-                                        y: () => bottom - heightOf(item),
-                                        height: () => heightOf(item),
-                                    },
-                                },
-                                {
-                                    text: {
-                                        x: cx,
-                                        y: () => bottom - heightOf(item) - 10,
-                                        "text-anchor": "middle",
-                                        fill: INK,
-                                        "font-size": "15",
-                                        textContent: () => item.caption(),
-                                    },
-                                },
-                                {
-                                    text: {
-                                        x: cx,
-                                        y: bottom + 26,
-                                        "text-anchor": "middle",
-                                        fill: SOFT,
-                                        "font-size": "13",
-                                        textContent: item.label,
-                                    },
-                                },
-                            ],
-                        },
-                    };
-                }),
-            ],
-        },
-    };
-}
+const PIPE = ["Method", "Spelling", "Viewer", "Route", "Before", "Cache", "Render", "Answer"];
 
-const REQUEST = [
-    ["Spelling", "Any other path is a 301, before the page is read."],
-    ["Viewer", "A signed-in page is private, and it is never stored for the next guest."],
-    ["Route", "The guard can redirect. That happens before the cache is asked."],
-    ["Before", "The first hook that names a location sends the request there."],
-    ["Cache", "A guest may receive a copy. A stale copy is sent while one render replaces it."],
-    ["Render", "The route’s preload runs, then one render, from the cache key."],
-    ["Answer", "public, private, or no-store. A matching ETag is a 304. A 404 never is."],
-];
+// Each cell is what that stage did with this request. "skip" is a stage the request did not run.
+const REQUESTS = {
+    spell: {
+        status: "301",
+        detail: "Location: /cart",
+        cells: [
+            ["GET continues", "on"],
+            ["301 to /cart", "on"],
+            ["not reached", "skip"],
+            ["not reached", "skip"],
+            ["not reached", "skip"],
+            ["not reached", "skip"],
+            ["not reached", "skip"],
+            ["not reached", "skip"],
+        ],
+    },
+    guest: {
+        status: "200",
+        detail: "public · the body is the cached “2 items”",
+        cells: [
+            ["GET continues", "on"],
+            ["/cart", "on"],
+            ["guest", "on"],
+            ["cart", "on"],
+            ["no redirect", "on"],
+            ["hit · 2 items", "on"],
+            ["not run", "skip"],
+            ["200 public", "on"],
+        ],
+    },
+    ada: {
+        status: "200",
+        detail: "private · rendered for Ada, and not stored",
+        cells: [
+            ["GET continues", "on"],
+            ["/cart", "on"],
+            ["Ada · personal", "on"],
+            ["cart", "on"],
+            ["no redirect", "on"],
+            ["skipped", "skip"],
+            ["Ada · 2 items", "on"],
+            ["200 private", "on"],
+        ],
+    },
+    missing: {
+        status: "404",
+        detail: "If-None-Match was sent. The status stays 404, and the page is not stored.",
+        cells: [
+            ["GET continues", "on"],
+            ["/missing", "on"],
+            ["guest", "on"],
+            ["no page", "on"],
+            ["no redirect", "on"],
+            ["not stored", "skip"],
+            ["not found", "on"],
+            ["404", "on"],
+        ],
+    },
+    post: {
+        status: "405",
+        detail: "Allow: GET, HEAD",
+        cells: [
+            ["405", "on"],
+            ["not reached", "skip"],
+            ["not reached", "skip"],
+            ["not reached", "skip"],
+            ["not reached", "skip"],
+            ["not reached", "skip"],
+            ["not reached", "skip"],
+            ["not reached", "skip"],
+        ],
+    },
+};
 
 export function mountRequestFlow(el) {
-    let timer = 0;
-    const stop = () => {
-        clearInterval(timer);
-        timer = 0;
-    };
-    const juris = new Juris({ state: { step: 0, play: false } });
-    const finish = mount(el, () => {
-        const play = (api) => {
-            stop();
-            api.setValue("play", true);
-            timer = setInterval(() => {
-                api.updateState("step", (step) => (step + 1) % REQUEST.length);
-            }, 900);
-        };
-        const nodeW = 118;
-        const gap = 22;
-        const origin = 28;
-        juris.registerComponent("Flow", (props, api) => ({
+    return mount(el, () => {
+        const juris = new Juris({ state: { which: "guest" } });
+        juris.registerComponent("Trace", (props, api) => {
+            const current = () => REQUESTS[api.getState("which", "guest")];
+            return {
+                div: {
+                    className: "flow",
+                    children: [
+                        {
+                            div: {
+                                className: "row",
+                                children: [
+                                    choice(api, "which", "spell", "GET /Cart"),
+                                    choice(api, "which", "guest", "GET /cart · guest"),
+                                    choice(api, "which", "ada", "GET /cart · Ada"),
+                                    choice(api, "which", "missing", "GET /missing"),
+                                    choice(api, "which", "post", "POST /cart"),
+                                ],
+                            },
+                        },
+                        {
+                            div: {
+                                className: "flow-board pipeline",
+                                children: PIPE.map((name, index) => ({
+                                    div: {
+                                        className: "station",
+                                        classList: {
+                                            on: () => current().cells[index][1] === "on",
+                                            skip: () => current().cells[index][1] === "skip",
+                                        },
+                                        children: [
+                                            { p: { className: "k", textContent: name } },
+                                            { p: { className: "v", textContent: () => current().cells[index][0] } },
+                                        ],
+                                    },
+                                })),
+                            },
+                        },
+                        {
+                            p: {
+                                className: "flow-result",
+                                textContent: () => `${current().status} · ${current().detail}`,
+                            },
+                        },
+                    ],
+                },
+            };
+        });
+        juris.render(el, { Trace: {} });
+        return juris;
+    });
+}
+
+export function mountPasses(el) {
+    return mount(el, () => {
+        const juris = new Juris({ state: { live: false, count: 2, runs: 1 } });
+        juris.registerComponent("Passes", (props, api) => ({
             div: {
-                className: "chart-body",
+                className: "flow",
                 children: [
                     {
-                        svg: {
-                            className: "chart-svg",
-                            viewBox: "0 0 1000 168",
-                            role: "img",
+                        div: {
+                            className: "pair",
                             children: [
                                 {
-                                    line: {
-                                        x1: origin + nodeW / 2,
-                                        x2: origin + (REQUEST.length - 1) * (nodeW + gap) + nodeW / 2,
-                                        y1: 78,
-                                        y2: 78,
-                                        stroke: TRACK,
-                                        "stroke-width": "4",
+                                    section: {
+                                        className: "station on",
+                                        children: [
+                                            { p: { className: "k", textContent: "Already sent" } },
+                                            { p: { className: "v doc", textContent: "Cart" } },
+                                            { p: { className: "v doc", textContent: "2" } },
+                                            { p: { className: "k", textContent: '#state {"cart":{"count":2}}' } },
+                                            { p: { className: "v", textContent: "title ×1 · count ×1" } },
+                                        ],
                                     },
                                 },
-                                ...REQUEST.map((node, index) => {
-                                    const x = origin + index * (nodeW + gap);
-                                    return {
-                                        g: {
-                                            onclick: () => {
-                                                stop();
-                                                api.setValue("play", false);
-                                                api.setValue("step", index);
-                                            },
-                                            style: { cursor: "pointer" },
-                                            children: [
-                                                {
-                                                    rect: {
-                                                        x,
-                                                        y: 46,
-                                                        width: nodeW,
-                                                        height: 64,
-                                                        rx: 12,
-                                                        fill: () => (api.getState("step") === index ? RULE : PAPER),
-                                                        stroke: () => (api.getState("step") === index ? RULE : TRACK),
-                                                        "stroke-width": "2",
-                                                    },
-                                                },
-                                                {
-                                                    text: {
-                                                        x: x + nodeW / 2,
-                                                        y: 84,
-                                                        "text-anchor": "middle",
-                                                        fill: () => (api.getState("step") === index ? PAPER : INK),
-                                                        "font-size": "14",
-                                                        textContent: node[0],
-                                                    },
-                                                },
-                                            ],
-                                        },
-                                    };
-                                }),
                                 {
-                                    circle: {
-                                        r: 8,
-                                        cy: 28,
-                                        fill: LIVE,
-                                        cx: () => origin + api.getState("step") * (nodeW + gap) + nodeW / 2,
+                                    section: {
+                                        className: "station",
+                                        classList: { on: () => api.getState("live") === true },
+                                        children: [
+                                            { p: { className: "k", textContent: () => (api.getState("live") ? "Browser, subscribed" : "Server HTML, still on screen") } },
+                                            { p: { className: "v doc", textContent: "Cart" } },
+                                            { p: { className: "v doc", textContent: () => String(api.getState("count", 2)) } },
+                                            { p: { className: "v", textContent: () => `title ×1 · count ×${api.getState("runs", 1)}` } },
+                                        ],
                                     },
                                 },
                             ],
                         },
                     },
-                    readout(() => {
-                        const step = api.getState("step", 0);
-                        return `${step + 1} of ${REQUEST.length}  ·  ${REQUEST[step][1]}`;
-                    }),
                     {
                         div: {
                             className: "row",
@@ -216,24 +193,20 @@ export function mountRequestFlow(el) {
                                     button: {
                                         type: "button",
                                         className: "primary",
-                                        textContent: () => (api.getState("play") ? "Pause" : "Send a request"),
-                                        onclick: () => {
-                                            if (api.getState("play")) {
-                                                stop();
-                                                api.setValue("play", false);
-                                            } else play(api);
-                                        },
+                                        textContent: "Take over the page",
+                                        disabled: () => api.getState("live") === true,
+                                        onclick: () => api.setValue("live", true),
                                     },
                                 },
                                 {
                                     button: {
                                         type: "button",
-                                        textContent: "Next step",
-                                        onclick: () => {
-                                            stop();
-                                            api.setValue("play", false);
-                                            api.updateState("step", (step) => (step + 1) % REQUEST.length);
-                                        },
+                                        textContent: "Add one",
+                                        disabled: () => api.getState("live") !== true,
+                                        onclick: () => api.batch(() => {
+                                            api.updateState("count", (n) => n + 1);
+                                            api.updateState("runs", (n) => n + 1);
+                                        }),
                                     },
                                 },
                             ],
@@ -242,35 +215,71 @@ export function mountRequestFlow(el) {
                 ],
             },
         }));
-        juris.render(el, { Flow: {} });
+        juris.render(el, { Passes: {} });
         return juris;
     });
-    return () => {
-        stop();
-        finish();
-    };
 }
 
-const BINDINGS = 6;
-
-export function mountPasses(el) {
+export function mountHydrateChart(el) {
     return mount(el, () => {
-        const juris = new Juris({ state: { writes: 1 } });
-        juris.registerComponent("Passes", (props, api) => {
-            const server = () => BINDINGS;
-            const client = () => BINDINGS * api.getState("writes", 1);
+        const juris = new Juris({ state: { skew: false, taken: false, count: 2 } });
+        juris.registerComponent("Boot", (props, api) => {
+            const ready = () => api.getState("taken") === true && api.getState("skew") !== true;
             return {
                 div: {
-                    className: "chart-body",
+                    className: "flow",
                     children: [
-                        columnChart(api, [
-                            { label: "Server, one pass", fill: RULE, value: server, caption: () => String(server()) },
-                            { label: "Browser, still subscribed", fill: SIGNAL, value: client, caption: () => String(client()) },
-                        ], { width: 720, height: 280, x: 40, y: 36, w: 640, h: 180, scale: BINDINGS * 12 }),
-                        readout(() => {
-                            const writes = api.getState("writes", 1);
-                            return `${BINDINGS} bindings. The server evaluated each one once. After ${writes} write${writes === 1 ? "" : "s"}, the browser has run them ${BINDINGS * writes} times.`;
-                        }),
+                        {
+                            div: {
+                                className: "flow-board tags",
+                                children: [
+                                    {
+                                        div: {
+                                            className: "station on",
+                                            children: [
+                                                { p: { className: "k", textContent: "#app" } },
+                                                { p: { className: "v", textContent: () => (ready() ? "replaced by the client" : "server markup") } },
+                                            ],
+                                        },
+                                    },
+                                    {
+                                        div: {
+                                            className: "station on",
+                                            children: [
+                                                { p: { className: "k", textContent: "#state" } },
+                                                { p: { className: "v", textContent: () => (ready() ? "adopted · cart.count 2" : '{"cart":{"count":2}}') } },
+                                            ],
+                                        },
+                                    },
+                                    {
+                                        div: {
+                                            className: "station",
+                                            classList: { skip: () => api.getState("skew") === true, on: () => api.getState("skew") !== true },
+                                            children: [
+                                                { p: { className: "k", textContent: "Route name" } },
+                                                { p: { className: "v", textContent: () => (api.getState("skew") ? "document says basket, this build says cart" : "cart on both sides") } },
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                        {
+                            div: {
+                                className: "page-card flow-page",
+                                children: [
+                                    { span: { textContent: () => `Cart · ${ready() ? api.getState("count", 2) : 2}` } },
+                                    {
+                                        button: {
+                                            type: "button",
+                                            textContent: "Add one",
+                                            disabled: () => !ready(),
+                                            onclick: () => api.updateState("count", (n) => n + 1),
+                                        },
+                                    },
+                                ],
+                            },
+                        },
                         {
                             div: {
                                 className: "row",
@@ -279,15 +288,32 @@ export function mountPasses(el) {
                                         button: {
                                             type: "button",
                                             className: "primary",
-                                            textContent: "Another state write",
-                                            onclick: () => api.updateState("writes", (n) => Math.min(n + 1, 12)),
+                                            textContent: "Take over the page",
+                                            disabled: () => api.getState("skew") === true || api.getState("taken") === true,
+                                            onclick: () => api.setValue("taken", true),
                                         },
                                     },
                                     {
                                         button: {
                                             type: "button",
-                                            textContent: "Back to the first paint",
-                                            onclick: () => api.setValue("writes", 1),
+                                            textContent: "Previous build",
+                                            onclick: () => api.batch(() => {
+                                                api.setValue("skew", true);
+                                                api.setValue("taken", false);
+                                                api.setValue("count", 2);
+                                            }),
+                                        },
+                                    },
+                                    {
+                                        button: {
+                                            type: "button",
+                                            textContent: "Reload once",
+                                            disabled: () => api.getState("skew") !== true,
+                                            onclick: () => api.batch(() => {
+                                                api.setValue("skew", false);
+                                                api.setValue("taken", true);
+                                                api.setValue("count", 2);
+                                            }),
                                         },
                                     },
                                 ],
@@ -297,227 +323,92 @@ export function mountPasses(el) {
                 },
             };
         });
-        juris.render(el, { Passes: {} });
-        return juris;
-    });
-}
-
-const BOOT = [
-    "Parse #state",
-    "Build the instance",
-    "Install plugins",
-    "Register components",
-    "Skew guard",
-    "Load the route",
-    "beforeMount",
-    "Mount into #app",
-    "Bind the title",
-    "Prefetch routes",
-    "Service worker",
-];
-
-export function mountHydrateChart(el) {
-    return mount(el, () => {
-        const juris = new Juris({ state: { step: 0 } });
-        juris.registerComponent("Boot", (props, api) => ({
-            div: {
-                className: "chart-body",
-                children: [
-                    {
-                        svg: {
-                            className: "chart-svg",
-                            viewBox: "0 0 1000 210",
-                            role: "img",
-                            children: [
-                                {
-                                    text: { x: 28, y: 28, fill: SOFT, "font-size": "13", textContent: "Boot" },
-                                },
-                                ...BOOT.map((label, index) => {
-                                    const slot = 86;
-                                    const x = 28 + index * slot;
-                                    return {
-                                        g: {
-                                            onclick: () => api.setValue("step", index),
-                                            style: { cursor: "pointer" },
-                                            children: [
-                                                {
-                                                    rect: {
-                                                        x,
-                                                        y: () => (api.getState("step") >= index ? 78 : 108),
-                                                        width: 70,
-                                                        height: () => (api.getState("step") >= index ? 70 : 40),
-                                                        rx: 8,
-                                                        fill: () => (index === 7 && api.getState("step") >= 7 ? LIVE : api.getState("step") >= index ? RULE : TRACK),
-                                                    },
-                                                },
-                                                {
-                                                    text: {
-                                                        x: x + 35,
-                                                        y: 176,
-                                                        "text-anchor": "middle",
-                                                        fill: SOFT,
-                                                        "font-size": "11",
-                                                        textContent: String(index + 1),
-                                                    },
-                                                },
-                                            ],
-                                        },
-                                    };
-                                }),
-                                {
-                                    text: { x: 28, y: 204, fill: INK, "font-size": "14", textContent: () => BOOT[api.getState("step", 0)] },
-                                },
-                            ],
-                        },
-                    },
-                    readout(() => {
-                        const step = api.getState("step", 0);
-                        const page = step >= 7 ? "The page is interactive." : "The server HTML is what is on screen.";
-                        const idle = step >= 9 ? " Other routes load once the browser is idle." : "";
-                        return `Step ${step + 1} of ${BOOT.length}: ${BOOT[step]}. ${page}${idle}`;
-                    }),
-                    {
-                        label: {
-                            className: "slider",
-                            children: [
-                                { span: { textContent: () => `Step ${api.getState("step", 0) + 1} of ${BOOT.length}` } },
-                                {
-                                    input: {
-                                        type: "range",
-                                        min: "0",
-                                        max: String(BOOT.length - 1),
-                                        step: "1",
-                                        value: () => String(api.getState("step", 0)),
-                                        oninput: (event) => api.setValue("step", Number(event.target.value)),
-                                    },
-                                },
-                            ],
-                        },
-                    },
-                ],
-            },
-        }));
         juris.render(el, { Boot: {} });
         return juris;
     });
 }
 
-const LEAF = 32;
-const DOCUMENT_FIELDS = 8;
-
-export function mountFanout(el) {
-    return mount(el, () => {
-        const juris = new Juris({ state: { pages: 24, changed: 2 } });
-        juris.registerComponent("Fanout", (props, api) => {
-            const diffBytes = () => api.getState("pages", 1) * api.getState("changed", 0) * LEAF;
-            const fullBytes = () => api.getState("pages", 1) * DOCUMENT_FIELDS * LEAF;
-            const messages = () => (api.getState("changed", 0) === 0 ? 0 : api.getState("pages", 1));
-            const kb = (bytes) => (bytes >= 1000 ? `${(bytes / 1000).toFixed(1)} KB` : `${bytes} B`);
-            return {
-                div: {
-                    className: "chart-body",
-                    children: [
-                        columnChart(api, [
-                            { label: "Changed leaves", fill: LIVE, value: diffBytes, caption: () => kb(diffBytes()) },
-                            { label: "Whole value, every page", fill: "#8aa4b0", value: fullBytes, caption: () => kb(fullBytes()) },
-                        ], { width: 860, height: 300, x: 48, y: 28, w: 760, h: 190, scale: 80 * DOCUMENT_FIELDS * LEAF }),
-                        readout(() => {
-                            const pages = api.getState("pages", 1);
-                            const changed = api.getState("changed", 0);
-                            if (changed === 0) {
-                                return `${pages} pages watch one query. The re-run changed nothing, so the server sends no message. Illustrated size of a full value: ${fullBytes()} bytes.`;
-                            }
-                            return `${pages} pages, 1 database read, ${messages()} diffs. Illustrated payload ${diffBytes()} bytes against ${fullBytes()} bytes if each page were sent all ${DOCUMENT_FIELDS} fields.`;
-                        }),
-                        {
-                            div: {
-                                className: "chart-controls",
-                                children: [
-                                    slider(api, "pages", "Pages", 1, 80, 1),
-                                    slider(api, "changed", "Fields that changed", 0, DOCUMENT_FIELDS, 1),
-                                ],
-                            },
-                        },
-                    ],
-                },
-            };
-        });
-        juris.render(el, { Fanout: {} });
-        return juris;
-    });
-}
-
-const BUS = [
-    ["Instance A", "The mutation commits here. Its touches name the queries to wake."],
-    ["Outbox", "The row is the record. A notification alone would vanish if nobody was listening."],
-    ["Doorbell", "Postgres wakes listeners with NOTIFY. MariaDB and MySQL wait for the next poll."],
-    ["Instance B", "It reads the row and applies the targets. It does not publish them again."],
-    ["Its pages", "Subscribers on this instance get the same diff. Pages on A already have it."],
-];
-
 export function mountBus(el) {
     return mount(el, () => {
-        const juris = new Juris({ state: { hop: 0, poll: 1000 } });
-        const nodeW = 150;
-        const gap = 28;
-        const origin = 36;
+        const juris = new Juris({ state: { engine: "pg", a: "Milk", b: "Milk", outbox: 0, waiting: false } });
+        const reset = (api, engine) => api.batch(() => {
+            api.setValue("engine", engine);
+            api.setValue("a", "Milk");
+            api.setValue("b", "Milk");
+            api.setValue("outbox", 0);
+            api.setValue("waiting", false);
+        });
         juris.registerComponent("Bus", (props, api) => ({
             div: {
-                className: "chart-body",
+                className: "flow",
                 children: [
                     {
-                        svg: {
-                            className: "chart-svg",
-                            viewBox: "0 0 960 150",
-                            role: "img",
+                        div: {
+                            className: "row",
                             children: [
                                 {
-                                    line: {
-                                        x1: origin + nodeW / 2,
-                                        x2: origin + (BUS.length - 1) * (nodeW + gap) + nodeW / 2,
-                                        y1: 70,
-                                        y2: 70,
-                                        stroke: TRACK,
-                                        "stroke-width": "4",
+                                    button: {
+                                        type: "button",
+                                        className: "choice",
+                                        classList: { on: () => api.getState("engine") === "pg" },
+                                        textContent: "Postgres",
+                                        disabled: () => api.getState("a") === "Eggs" || api.getState("waiting") === true,
+                                        onclick: () => api.setValue("engine", "pg"),
                                     },
                                 },
-                                ...BUS.map((node, index) => {
-                                    const x = origin + index * (nodeW + gap);
-                                    return {
-                                        g: {
-                                            onclick: () => api.setValue("hop", index),
-                                            style: { cursor: "pointer" },
-                                            children: [
-                                                {
-                                                    rect: {
-                                                        x,
-                                                        y: 38,
-                                                        width: nodeW,
-                                                        height: 64,
-                                                        rx: 12,
-                                                        fill: () => (api.getState("hop") === index ? RULE : api.getState("hop") > index ? "#d7efe8" : PAPER),
-                                                        stroke: () => (api.getState("hop") >= index ? LIVE : TRACK),
-                                                        "stroke-width": "2",
-                                                    },
-                                                },
-                                                {
-                                                    text: {
-                                                        x: x + nodeW / 2,
-                                                        y: 76,
-                                                        "text-anchor": "middle",
-                                                        fill: () => (api.getState("hop") === index ? PAPER : INK),
-                                                        "font-size": "15",
-                                                        textContent: node[0],
-                                                    },
-                                                },
-                                            ],
-                                        },
-                                    };
-                                }),
+                                {
+                                    button: {
+                                        type: "button",
+                                        className: "choice",
+                                        classList: { on: () => api.getState("engine") === "mysql" },
+                                        textContent: "MariaDB",
+                                        disabled: () => api.getState("a") === "Eggs" || api.getState("waiting") === true,
+                                        onclick: () => api.setValue("engine", "mysql"),
+                                    },
+                                },
                             ],
                         },
                     },
-                    readout(() => BUS[api.getState("hop", 0)][1]),
+                    {
+                        div: {
+                            className: "flow-board thirds",
+                            children: [
+                                {
+                                    div: {
+                                        className: "station on",
+                                        children: [
+                                            { p: { className: "k", textContent: "Instance A · its pages" } },
+                                            { p: { className: "v doc", textContent: () => api.getState("a", "Milk") } },
+                                        ],
+                                    },
+                                },
+                                {
+                                    div: {
+                                        className: "station",
+                                        classList: { on: () => api.getState("outbox", 0) > 0 },
+                                        children: [
+                                            { p: { className: "k", textContent: "Outbox" } },
+                                            { p: { className: "v", textContent: () => (api.getState("outbox", 0) === 0 ? "empty" : "1 row · todos") } },
+                                        ],
+                                    },
+                                },
+                                {
+                                    div: {
+                                        className: "station",
+                                        classList: {
+                                            on: () => api.getState("b") === "Eggs",
+                                            skip: () => api.getState("waiting") === true,
+                                        },
+                                        children: [
+                                            { p: { className: "k", textContent: "Instance B · its pages" } },
+                                            { p: { className: "v doc", textContent: () => api.getState("b", "Milk") } },
+                                            { p: { className: "v", textContent: () => (api.getState("waiting") ? "stale until the next poll" : api.getState("b") === "Eggs" ? "read the row · wrote none" : "in sync") } },
+                                        ],
+                                    },
+                                },
+                            ],
+                        },
+                    },
                     {
                         div: {
                             className: "row",
@@ -526,19 +417,41 @@ export function mountBus(el) {
                                     button: {
                                         type: "button",
                                         className: "primary",
-                                        textContent: "Advance the write",
-                                        onclick: () => api.updateState("hop", (hop) => (hop + 1) % BUS.length),
+                                        textContent: "Commit Eggs on A",
+                                        disabled: () => api.getState("a") === "Eggs",
+                                        onclick: () => api.batch(() => {
+                                            api.setValue("a", "Eggs");
+                                            api.setValue("outbox", 1);
+                                            if (api.getState("engine") === "pg") {
+                                                api.setValue("b", "Eggs");
+                                                api.setValue("waiting", false);
+                                            } else {
+                                                api.setValue("waiting", true);
+                                            }
+                                        }),
+                                    },
+                                },
+                                {
+                                    button: {
+                                        type: "button",
+                                        textContent: "Poll",
+                                        disabled: () => api.getState("waiting") !== true,
+                                        onclick: () => api.batch(() => {
+                                            api.setValue("b", "Eggs");
+                                            api.setValue("waiting", false);
+                                        }),
+                                    },
+                                },
+                                {
+                                    button: {
+                                        type: "button",
+                                        textContent: "Reset",
+                                        onclick: () => reset(api, api.getState("engine", "pg")),
                                     },
                                 },
                             ],
                         },
                     },
-                    columnChart(api, [
-                        { label: "Postgres NOTIFY", fill: LIVE, value: () => 20, caption: () => "wake" },
-                        { label: "MariaDB poll", fill: SIGNAL, value: () => api.getState("poll", 1000), caption: () => `${api.getState("poll", 1000)} ms` },
-                    ], { width: 720, height: 250, x: 40, y: 24, w: 640, h: 150 }),
-                    readout(() => `The other instance hears a Postgres doorbell at once. On MariaDB it waits for the poll, up to ${api.getState("poll", 1000)} ms. The outbox is what both of them read.`),
-                    slider(api, "poll", "Poll every", 250, 4000, 250),
                 ],
             },
         }));
